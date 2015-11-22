@@ -1,0 +1,160 @@
+---
+title: "Coursera PML Final Project Report"
+author: "Cp"
+output:
+  html_document:
+    fig_height: 9
+    fig_width: 9
+    keep_md: yes
+---
+
+<br>
+
+### Summary  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+
+<br> 
+
+### Load necessary packages  
+In the intial step, we load the necessary packages and download and read the data.
+
+```{r, echo=FALSE,warning=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+set.seed(062007)
+```
+<br>
+
+### Downloading and load data into memory
+
+``` {r}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training_raw <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+testing_raw <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+```
+
+### Next, we look at dimension of the raw datasets and first 10 rows.
+
+``` {r}
+dim(training_raw)
+
+
+dim(testing_raw)
+```
+As shown above, there are 19622 observations for 160 variables in the training data set and 20 observations for 160 variable in the testing data set.  The variable to predict is the "classe" variable in the training set. Viewing the first few rows of the raw data sets with the "head" function shows that there are many columns with missing values and columns that are not necessary for prediction.  We will clean these in next step.
+
+<br>
+
+### Cleaning/processing the data
+In the following steps, we remove missing values (columns containing "NA") and unnecessary variables(like the first 7 columns).
+
+``` {r}
+cleanTrain<-training_raw[,-seq(1:7)]
+cleanTest<-testing_raw[,-seq(1:7)]
+hasNA<-as.vector(sapply(cleanTrain[,1:152],function(x) {length(which(is.na(x)))!=0}))
+cleanTrain<-cleanTrain[,!hasNA]
+cleanTest<-cleanTest[,!hasNA]
+
+dim(cleanTrain)
+dim(cleanTest)
+```
+The cleaning steps reduced the training data to 19622 observations with 53 variables(including "classe") and the testing data set to 20 observations with 53 variables. 
+
+<br>
+
+### Creating Data Partitions
+Next we divide the cleaned data set into training set(70%) and a validation set (30%). The validation data set will be used to conduct cross validation.  
+
+``` {r}
+inTrain <- createDataPartition(cleanTrain$classe, p=0.70, list=F)
+Train_data <- cleanTrain[inTrain, ]
+Test_data <- cleanTrain[-inTrain, ]
+```
+
+<br>
+
+### Prediction Modeling
+We will compare two different prediction models, **Decision Tree** and **Random Forest**, and pick the one the method that produces the most accurate model.  We expect that Random Forest algorithm will be most accurate since it is robust to correlated covariates and outliers and it automatically selects important variables. 
+
+<br>
+
+### First, Decision Tree model  
+
+```{r}
+modDTfit <- rpart(classe ~ ., data=Train_data, method="class")
+```
+
+<br>
+
+### Now we estimate model preformance using the validation set
+
+```{r}
+modDTpredict <- predict(modDTfit, Test_data, type = "class")
+confusionMatrix(modDTpredict, Test_data$classe)
+```
+At 75%, the accuracy of this model is not very good.
+
+<br>
+
+### Next, we create a model with Random Forest algorithm
+
+```{r}
+modRFfit <- randomForest(classe ~. , data=Train_data)
+modRFfit
+```
+
+
+<br>
+
+### Estimating the random forest model performance with validation data set
+```{r}
+modRFpredict <- predict(modRFfit, Test_data, type = "class")
+
+confusionMatrix(modRFpredict, Test_data$classe)
+```
+As expected, we see more accurate resutls with Random Forest model.  
+
+<br><br>
+
+### Calculating accuary and out of sample error
+
+```{r}
+accuracy <- postResample(modRFpredict, Test_data$classe)
+accuracy
+
+oose <- 1 - as.numeric(confusionMatrix(Test_data$classe, modRFpredict)$overall[1])
+oose
+```
+We see excellent results using validation set with accuracy of  99.3 %  and the estimated out-of-sample error is  0.7 % .  We will use the Random Forest algorithm model to predict on the test data set.
+
+<br><br>
+
+## Final Prediction for test set
+In this step, we apply the prediction model to the orginal testing data set without the "problem_id" variable.
+
+```{r}
+Finaltest <- predict(modRFfit, cleanTest[, -length(names(cleanTest))])
+Finaltest
+```
+<br>
+
+Function to generate files with predictions to submit for assignment
+```{r,eval=FALSE}
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(Finaltest)
+```
+
